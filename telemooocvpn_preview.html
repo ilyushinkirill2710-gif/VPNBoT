@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TelemooocVPN — превью бота</title>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=Golos+Text:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --tg-bg: #17212b;
+    --tg-sidebar: #0e1621;
+    --tg-bubble-in: #182533;
+    --tg-bubble-out: #2b5278;
+    --tg-btn: #2b5278;
+    --tg-btn-hover: #3a6898;
+    --tg-text: #e8f4fe;
+    --tg-muted: #708fa0;
+    --tg-accent: #5ca8e0;
+    --tg-green: #4fca6e;
+    --tg-header: #1c2c3a;
+    --font-display: 'Unbounded', sans-serif;
+    --font-body: 'Golos Text', sans-serif;
+  }
+
+  body {
+    background: #0a0f14;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: var(--font-body);
+    padding: 24px;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Заголовок страницы ── */
+  .page-title {
+    width: 100%;
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #3a6898;
+    margin-bottom: -16px;
+  }
+
+  /* ── Обёртка телефона ── */
+  .phone-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .screen-label {
+    font-family: var(--font-display);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #3a6898;
+  }
+
+  .phone {
+    width: 320px;
+    height: 620px;
+    background: var(--tg-sidebar);
+    border-radius: 32px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px #1e3248,
+      0 32px 80px rgba(0,0,0,0.7),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* ── Шапка чата ── */
+  .chat-header {
+    background: var(--tg-header);
+    padding: 12px 16px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    flex-shrink: 0;
+  }
+
+  .back-btn {
+    color: var(--tg-accent);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .bot-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1a6fa8 0%, #0d3d6b 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .bot-info { flex: 1; }
+  .bot-name {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--tg-text);
+    line-height: 1.2;
+  }
+  .bot-status {
+    font-size: 11px;
+    color: var(--tg-green);
+  }
+
+  /* ── Тело чата ── */
+  .chat-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--tg-bg);
+    scrollbar-width: none;
+  }
+  .chat-body::-webkit-scrollbar { display: none; }
+
+  /* ── Дата-разделитель ── */
+  .date-divider {
+    text-align: center;
+    font-size: 11px;
+    color: var(--tg-muted);
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 3px 10px;
+    align-self: center;
+    margin: 6px 0;
+  }
+
+  /* ── Сообщение пользователя ── */
+  .msg-user {
+    align-self: flex-end;
+    max-width: 78%;
+  }
+  .msg-user .bubble {
+    background: var(--tg-bubble-out);
+    border-radius: 16px 4px 16px 16px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--tg-text);
+    line-height: 1.5;
+  }
+
+  /* ── Сообщение бота ── */
+  .msg-bot {
+    align-self: flex-start;
+    max-width: 88%;
+  }
+  .msg-bot .bubble {
+    background: var(--tg-bubble-in);
+    border-radius: 4px 16px 16px 16px;
+    padding: 10px 12px 6px;
+    font-size: 13px;
+    color: var(--tg-text);
+    line-height: 1.55;
+  }
+
+  .bubble b { color: #e8f4fe; font-weight: 600; }
+  .bubble i { color: #9ab8ce; font-style: italic; }
+  .bubble code {
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+    color: #8ecfee;
+    word-break: break-all;
+  }
+
+  .msg-time {
+    font-size: 10px;
+    color: var(--tg-muted);
+    text-align: right;
+    margin-top: 3px;
+    padding-right: 2px;
+  }
+  .msg-bot .msg-time { text-align: left; padding-left: 2px; }
+
+  /* ── Inline-кнопки ── */
+  .inline-btns {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .inline-btn {
+    background: var(--tg-btn);
+    border: none;
+    border-radius: 10px;
+    color: #c8e6ff;
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 9px 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s, transform 0.1s;
+    width: 100%;
+    letter-spacing: 0.01em;
+  }
+  .inline-btn:hover { background: var(--tg-btn-hover); }
+  .inline-btn:active { transform: scale(0.97); }
+  .inline-btn.active-state {
+    background: #1a4a72;
+    border: 1px solid #3a7ab8;
+    animation: pulse-btn 0.4s ease;
+  }
+
+  @keyframes pulse-btn {
+    0% { transform: scale(1); }
+    50% { transform: scale(0.96); }
+    100% { transform: scale(1); }
+  }
+
+  /* ── Ввод ── */
+  .chat-input {
+    background: var(--tg-header);
+    border-top: 1px solid rgba(255,255,255,0.04);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .input-field {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 8px 14px;
+    color: var(--tg-muted);
+    font-family: var(--font-body);
+    font-size: 13px;
+  }
+
+  .send-btn {
+    width: 34px;
+    height: 34px;
+    background: var(--tg-accent);
+    border: none;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: white;
+    font-size: 14px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .send-btn:hover { background: #4b98d0; }
+
+  /* ── Навигация по экранам ── */
+  .nav-dots {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+  .nav-dot {
+    width: 28px;
+    height: 4px;
+    border-radius: 2px;
+    background: #1e3248;
+    cursor: pointer;
+    transition: background 0.2s, width 0.2s;
+  }
+  .nav-dot.active {
+    background: var(--tg-accent);
+    width: 36px;
+  }
+
+  /* ── Анимация появления сообщений ── */
+  .msg-bot, .msg-user {
+    animation: fadeUp 0.3s ease both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg-bot:nth-child(2) { animation-delay: 0.05s; }
+  .msg-bot:nth-child(3) { animation-delay: 0.1s; }
+  .msg-bot:nth-child(4) { animation-delay: 0.15s; }
+</style>
+</head>
+<body>
+
+<div class="page-title">TelemooocVPN · Превью экранов Telegram-бота</div>
+
+<!-- ══════════════════════════════════ ЭКРАН 1 ══════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">① Главное меню</div>
+  <div class="phone">
+    <div class="chat-header">
+      <div class="back-btn">‹</div>
+      <div class="bot-avatar">🌐</div>
+      <div class="bot-info">
+        <div class="bot-name">TelemooocVPN</div>
+        <div class="bot-status">● бот онлайн</div>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="date-divider">сегодня</div>
+
+      <div class="msg-user">
+        <div class="bubble">/start</div>
+        <div class="msg-time">14:22</div>
+      </div>
+
+      <div class="msg-bot">
+        <div class="bubble">
+          🌐 <b>TelemooocVPN</b><br>
+          <i>«Берёт связь даже на парковке»</i><br><br>
+          Привет, <b>Алексей</b>! 👋<br><br>
+          Мы предлагаем быстрый и надёжный VPN с серверами в 🇩🇪 <b>Германии</b>.<br><br>
+          📌 <b>Что входит в подписку:</b><br>
+          • 💰 Всего <b>80 ₽/месяц</b><br>
+          • 📱 До <b>5 устройств</b> одновременно<br>
+          • 🚀 Безлимитный трафик<br>
+          • 🔒 Полная конфиденциальность<br><br>
+          Выбери действие ниже 👇
+        </div>
+        <div class="inline-btns">
+          <button class="inline-btn">🛒 Купить подписку</button>
+          <button class="inline-btn">👤 Мой профиль / Мой ключ</button>
+          <button class="inline-btn">📜 Правила и Конфиденциальность</button>
+        </div>
+        <div class="msg-time">14:22</div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <div class="input-field">Сообщение...</div>
+      <button class="send-btn">➤</button>
+    </div>
+  </div>
+  <div class="nav-dots">
+    <div class="nav-dot active"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ ЭКРАН 2 ══════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">② Тариф и оплата</div>
+  <div class="phone">
+    <div class="chat-header">
+      <div class="back-btn">‹</div>
+      <div class="bot-avatar">🌐</div>
+      <div class="bot-info">
+        <div class="bot-name">TelemooocVPN</div>
+        <div class="bot-status">● бот онлайн</div>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="date-divider">сегодня</div>
+
+      <div class="msg-bot">
+        <div class="bubble">
+          🛒 <b>Покупка подписки TelemooocVPN</b><br><br>
+          📦 <b>Тариф: 1 месяц</b><br>
+          ├ 🌍 Сервер: 🇩🇪 Германия<br>
+          ├ 📱 Устройств: до 5<br>
+          ├ 📶 Трафик: безлимит<br>
+          └ 💰 Стоимость: <b>80 ₽</b><br><br>
+          Нажми «Оплатить», чтобы перейти к оплате.
+        </div>
+        <div class="inline-btns">
+          <button class="inline-btn">💳 Оплатить 80 ₽</button>
+          <button class="inline-btn">🔙 Назад</button>
+        </div>
+        <div class="msg-time">14:23</div>
+      </div>
+
+      <div class="msg-bot" style="animation-delay:0.2s">
+        <div class="bubble">
+          💳 <b>Счёт создан!</b><br><br>
+          Сумма: <b>80 ₽</b><br>
+          Нажми кнопку ниже и оплати в браузере.<br><br>
+          После оплаты вернись сюда и нажми <b>«Я оплатил»</b>.
+        </div>
+        <div class="inline-btns">
+          <button class="inline-btn active-state">💳 Перейти к оплате</button>
+          <button class="inline-btn">✅ Я оплатил — проверить</button>
+          <button class="inline-btn">❌ Отменить</button>
+        </div>
+        <div class="msg-time">14:23</div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <div class="input-field">Сообщение...</div>
+      <button class="send-btn">➤</button>
+    </div>
+  </div>
+  <div class="nav-dots">
+    <div class="nav-dot"></div>
+    <div class="nav-dot active"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ ЭКРАН 3 ══════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">③ Выдача ключа</div>
+  <div class="phone">
+    <div class="chat-header">
+      <div class="back-btn">‹</div>
+      <div class="bot-avatar">🌐</div>
+      <div class="bot-info">
+        <div class="bot-name">TelemooocVPN</div>
+        <div class="bot-status">● бот онлайн</div>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="date-divider">сегодня</div>
+
+      <div class="msg-bot">
+        <div class="bubble">
+          ✅ Оплата получена!<br>
+          ⚙️ Генерируем VPN-ключ...
+        </div>
+        <div class="msg-time">14:24</div>
+      </div>
+
+      <div class="msg-bot" style="animation-delay:0.25s">
+        <div class="bubble">
+          🎉 <b>Подписка активирована!</b><br><br>
+          📅 Действует до: <b>14.04.2026</b><br>
+          📱 Устройств: до <b>5</b><br>
+          🌍 Сервер: 🇩🇪 Германия<br><br>
+          🔑 <b>Ваша ссылка-подписка:</b><br>
+          <code>vless://sub.telemoooc.vpn/api/v1/sub/tg_123456_a7f3c2</code><br><br>
+          <i>Скопируйте ссылку и вставьте её в приложение VPN-клиента (например, Hiddify, v2rayNG, Streisand).</i>
+        </div>
+        <div class="inline-btns">
+          <button class="inline-btn">🔙 Главное меню</button>
+        </div>
+        <div class="msg-time">14:24</div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <div class="input-field">Сообщение...</div>
+      <button class="send-btn">➤</button>
+    </div>
+  </div>
+  <div class="nav-dots">
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot active"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ ЭКРАН 4 ══════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">④ Профиль</div>
+  <div class="phone">
+    <div class="chat-header">
+      <div class="back-btn">‹</div>
+      <div class="bot-avatar">🌐</div>
+      <div class="bot-info">
+        <div class="bot-name">TelemooocVPN</div>
+        <div class="bot-status">● бот онлайн</div>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="date-divider">сегодня</div>
+
+      <div class="msg-bot">
+        <div class="bubble">
+          👤 <b>Ваш профиль</b><br><br>
+          ✅ Статус: <b>Активна</b><br>
+          📅 Действует до: <b>14.04.2026</b><br>
+          ⏳ Осталось дней: <b>30</b><br>
+          🌍 Сервер: 🇩🇪 Германия<br>
+          📱 Устройств: до <b>5</b>
+        </div>
+        <div class="inline-btns">
+          <button class="inline-btn">🔑 Получить мой ключ</button>
+          <button class="inline-btn">🔄 Продлить подписку</button>
+          <button class="inline-btn">🔙 Главное меню</button>
+        </div>
+        <div class="msg-time">14:25</div>
+      </div>
+
+      <div class="msg-bot" style="animation-delay:0.2s">
+        <div class="bubble">
+          🔑 <b>Ваш VPN-ключ</b><br><br>
+          <code>vless://sub.telemoooc.vpn/api/v1/sub/tg_123456_a7f3c2</code><br><br>
+          📅 Действует до: <b>14.04.2026</b><br><br>
+          <i>Скопируйте ссылку и вставьте в приложение:<br>
+          Hiddify · v2rayNG · Streisand · Shadowrocket</i>
+        </div>
+        <div class="inline-btns">
+          <button class="inline-btn">🔙 Главное меню</button>
+        </div>
+        <div class="msg-time">14:25</div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <div class="input-field">Сообщение...</div>
+      <button class="send-btn">➤</button>
+    </div>
+  </div>
+  <div class="nav-dots">
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot active"></div>
+    <div class="nav-dot"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════ ЭКРАН 5 ══════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">⑤ Документы</div>
+  <div class="phone">
+    <div class="chat-header">
+      <div class="back-btn">‹</div>
+      <div class="bot-avatar">🌐</div>
+      <div class="bot-info">
+        <div class="bot-name">TelemooocVPN</div>
+        <div class="bot-status">● бот онлайн</div>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="date-divider">сегодня</div>
+
+      <div class="msg-bot">
+        <div class="bubble">
+          📜 <b>Правовые документы TelemooocVPN</b><br><br>
+          Перед использованием сервиса ознакомьтесь с документами:<br><br>
+          🔹 <span style="color:#5ca8e0">Пользовательское соглашение</span><br>
+          🔹 <span style="color:#5ca8e0">Политика конфиденциальности</span><br><br>
+          <i>Используя наш сервис, вы соглашаетесь с указанными документами.</i>
+        </div>
+        <div class="inline-btns">
+          <button class="inline-btn">🔙 Главное меню</button>
+        </div>
+        <div class="msg-time">14:26</div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <div class="input-field">Сообщение...</div>
+      <button class="send-btn">➤</button>
+    </div>
+  </div>
+  <div class="nav-dots">
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot"></div>
+    <div class="nav-dot active"></div>
+  </div>
+</div>
+
+</body>
+</html>
