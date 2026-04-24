@@ -147,16 +147,38 @@ run_step() {
 trap 'heartbeat_stop' EXIT INT TERM
 
 # ---------- apt packages ----------
+# apt-get update runs only when we actually need to install something.
+APT_UPDATED=0
+ensure_apt_updated() {
+    [[ "$APT_UPDATED" -eq 1 ]] && return
+    run_step "Обновляю списки apt (одноразово перед установкой)…" run_apt update
+    APT_UPDATED=1
+}
+
+ensure_pkgs() {
+    # ensure_pkgs <bin1:pkg1> <bin2:pkg2> …  — устанавливает только отсутствующие.
+    local missing=()
+    for pair in "$@"; do
+        local bin="${pair%%:*}" pkg="${pair##*:}"
+        if ! command -v "$bin" >/dev/null 2>&1; then
+            missing+=("$pkg")
+        fi
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        ok "Системные пакеты уже установлены, apt не трогаю"
+        return
+    fi
+    ensure_apt_updated
+    run_step "Ставлю недостающие пакеты: ${missing[*]}…" run_apt install -y "${missing[@]}"
+}
+
 install_packages() {
-    run_step "Обновляю apt (до минуты на свежем VPS)…" run_apt update
-    run_step "Ставлю базовые пакеты: git, curl, ca-certificates, ufw, gnupg, psmisc…" \
-        run_apt install -y git curl ca-certificates ufw gnupg psmisc
-    ok "Базовые пакеты готовы"
+    ensure_pkgs git:git curl:curl ca-certificates:ca-certificates ufw:ufw gpg:gnupg fuser:psmisc
 }
 
 install_docker() {
     if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        ok "Docker уже установлен ($(docker --version))"
+        ok "Docker уже установлен ($(docker --version)), пропускаю"
         return
     fi
     run_step "Скачиваю установщик Docker…" curl -fSL https://get.docker.com -o /tmp/get-docker.sh
@@ -168,9 +190,11 @@ install_docker() {
 
 install_caddy() {
     if command -v caddy >/dev/null 2>&1; then
-        ok "Caddy уже установлен ($(caddy version | head -n1))"
+        ok "Caddy уже установлен ($(caddy version | head -n1)), пропускаю"
         return
     fi
+    ensure_pkgs gpg:gnupg
+    ensure_apt_updated
     run_step "Ставлю зависимости Caddy…" \
         run_apt install -y debian-keyring debian-archive-keyring apt-transport-https
     log "Добавляю apt-репозиторий Caddy…"
@@ -178,7 +202,9 @@ install_caddy() {
         | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
         > /etc/apt/sources.list.d/caddy-stable.list
-    run_step "Обновляю apt после добавления Caddy…" run_apt update
+    # Новый репо добавлен — нужно один раз обновить индексы именно для него.
+    APT_UPDATED=0
+    ensure_apt_updated
     run_step "Ставлю Caddy…" run_apt install -y caddy
     ok "Caddy установлен ($(caddy version | head -n1))"
 }
