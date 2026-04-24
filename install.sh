@@ -14,21 +14,19 @@ REPO_URL="${REPO_URL:-https://github.com/ilyushinkirill2710-gif/VPNBoT.git}"
 BRANCH="${BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/vpnbot}"
 
-C_RESET="\033[0m"; C_BOLD="\033[1m"; C_GREEN="\033[32m"; C_YELLOW="\033[33m"
-C_RED="\033[31m"; C_CYAN="\033[36m"
-log()  { printf "${C_CYAN}[i]${C_RESET} %s\n" "$*"; }
-ok()   { printf "${C_GREEN}[+]${C_RESET} %s\n" "$*"; }
-warn() { printf "${C_YELLOW}[!]${C_RESET} %s\n" "$*" >&2; }
-die()  { printf "${C_RED}[x]${C_RESET} %s\n" "$*" >&2; exit 1; }
+# ANSI-C quoting ($'...') keeps the actual ESC byte in the variable so that
+# heredocs and `echo` print real colors instead of literal \033[1m text.
+C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
+C_RED=$'\033[31m'; C_CYAN=$'\033[36m'
+log()  { printf '%s[i]%s %s\n' "$C_CYAN"   "$C_RESET" "$*"; }
+ok()   { printf '%s[+]%s %s\n' "$C_GREEN"  "$C_RESET" "$*"; }
+warn() { printf '%s[!]%s %s\n' "$C_YELLOW" "$C_RESET" "$*" >&2; }
+die()  { printf '%s[x]%s %s\n' "$C_RED"    "$C_RESET" "$*" >&2; exit 1; }
 
 banner() {
-    cat <<EOF
-
-${C_BOLD}============================================================
- VPN Telegram bot installer — Remnawave + platega.io
-============================================================${C_RESET}
-
-EOF
+    printf '\n%s============================================================%s\n' "$C_BOLD" "$C_RESET"
+    printf '%s VPN Telegram bot installer — Remnawave + platega.io%s\n'             "$C_BOLD" "$C_RESET"
+    printf '%s============================================================%s\n\n'   "$C_BOLD" "$C_RESET"
 }
 
 # ---------- sanity ----------
@@ -106,15 +104,20 @@ wait_for_apt() {
 
 run_apt() {
     wait_for_apt
-    DEBIAN_FRONTEND=noninteractive apt-get "$@"
+    # Disable dpkg's fancy progress/pty so output flushes line-by-line through
+    # the `curl | sudo bash` pipe — otherwise on some terminals apt looks hung.
+    DEBIAN_FRONTEND=noninteractive apt-get \
+        -o Dpkg::Use-Pty=0 \
+        -o Dpkg::Progress-Fancy=0 \
+        "$@"
 }
 
 # ---------- apt packages ----------
 install_packages() {
-    log "Обновляю apt (это может занять минуту)…"
+    log "Обновляю apt (это может занять до минуты на свежем VPS)…"
     run_apt update
-    log "Ставлю базовые пакеты: git, curl, ca-certificates, ufw, gnupg…"
-    run_apt install -y git curl ca-certificates ufw gnupg
+    log "Ставлю базовые пакеты: git, curl, ca-certificates, ufw, gnupg, psmisc…"
+    run_apt install -y git curl ca-certificates ufw gnupg psmisc
     ok "Базовые пакеты готовы"
 }
 
