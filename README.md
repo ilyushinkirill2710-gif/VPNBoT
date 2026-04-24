@@ -31,18 +31,47 @@
 
 ## Быстрый старт
 
-### 1. Установка
+### Автоматическая установка одной командой
+
+Нужен VPS на Ubuntu 22.04/24.04 c публичным IP и доменом, DNS A-запись которого указывает на этот сервер.
 
 ```bash
-git clone https://github.com/<you>/vpn-telegram-bot.git
-cd vpn-telegram-bot
+curl -fsSL https://raw.githubusercontent.com/ilyushinkirill2710-gif/VPNBoT/main/install.sh | sudo bash
+```
+
+Скрипт:
+
+1. Ставит Docker, Caddy и базовые пакеты.
+2. Клонирует репо в `/opt/vpnbot`.
+3. Интерактивно спрашивает все токены (Telegram, Remnawave, platega.io), домен и сохраняет `.env`.
+4. Настраивает UFW (22/80/443) и Caddy с Let's Encrypt для вашего домена.
+5. Поднимает `docker compose up -d`.
+
+После установки в ЛК platega.io (Настройки → Callback URLs) добавьте URL, который показал скрипт
+(`https://<ваш-домен>/platega/callback`).
+
+Передать значения заранее и пропустить вопросы можно через переменные окружения:
+
+```bash
+BOT_TOKEN=... ADMIN_IDS=123 \
+REMNAWAVE_BASE_URL=https://panel.example.com REMNAWAVE_TOKEN=... \
+PLATEGA_MERCHANT_ID=... PLATEGA_SECRET=... \
+DOMAIN=bot.example.com \
+curl -fsSL https://raw.githubusercontent.com/ilyushinkirill2710-gif/VPNBoT/main/install.sh | sudo -E bash
+```
+
+### Ручная установка
+
+```bash
+git clone https://github.com/ilyushinkirill2710-gif/VPNBoT.git
+cd VPNBoT
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
 # отредактируйте .env — см. таблицу ниже
 ```
 
-### 2. Запуск в Docker
+### Ручной запуск в Docker
 
 ```bash
 cp .env.example .env
@@ -54,11 +83,12 @@ docker compose up -d --build
 оставьте `DATABASE_URL=sqlite+aiosqlite:///./data/vpnbot.sqlite3` и удалите сервис `db` из
 `docker-compose.yml`.
 
-### 3. Публичный callback-URL
+### Публичный callback-URL
 
 Бот должен быть доступен по HTTPS извне, чтобы platega.io мог отправлять callback. Поставьте перед
-ним nginx/Caddy/traefik с валидным сертификатом и пробросьте `/platega/callback` на порт `8080`.
-В личном кабинете platega.io (Настройки → Callback URLs) укажите полный URL, например:
+ним nginx/Caddy/traefik с валидным сертификатом и пробросьте `/platega/callback` на порт `8080`
+(`install.sh` делает это автоматически). В личном кабинете platega.io (Настройки → Callback URLs)
+укажите полный URL, например:
 
 ```
 https://bot.example.com/platega/callback
