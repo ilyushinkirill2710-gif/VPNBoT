@@ -112,12 +112,45 @@ run_apt() {
         "$@"
 }
 
+# ---------- heartbeat ----------
+# Prints a dot to stderr every 2s so the user sees activity even when the
+# wrapped command is silent (apt fetching lists, Docker pulling images, etc).
+_HB_PID=""
+heartbeat_start() {
+    [[ -n "$_HB_PID" ]] && return
+    (
+        trap 'exit 0' TERM
+        while :; do printf '.' >&2; sleep 2; done
+    ) &
+    _HB_PID=$!
+    disown "$_HB_PID" 2>/dev/null || true
+}
+heartbeat_stop() {
+    if [[ -n "$_HB_PID" ]]; then
+        kill "$_HB_PID" 2>/dev/null || true
+        wait "$_HB_PID" 2>/dev/null || true
+        _HB_PID=""
+        printf '\n' >&2
+    fi
+}
+# Run a labeled step with a heartbeat. Output of the wrapped command is
+# indented so it's clearly distinguishable from installer messages.
+run_step() {
+    local label="$1"; shift
+    log "$label"
+    heartbeat_start
+    local status=0
+    "$@" 2>&1 | sed 's/^/    /' || status=$?
+    heartbeat_stop
+    return "$status"
+}
+trap 'heartbeat_stop' EXIT INT TERM
+
 # ---------- apt packages ----------
 install_packages() {
-    log "Обновляю apt (это может занять до минуты на свежем VPS)…"
-    run_apt update
-    log "Ставлю базовые пакеты: git, curl, ca-certificates, ufw, gnupg, psmisc…"
-    run_apt install -y git curl ca-certificates ufw gnupg psmisc
+    run_step "Обновляю apt (до минуты на свежем VPS)…" run_apt update
+    run_step "Ставлю базовые пакеты: git, curl, ca-certificates, ufw, gnupg, psmisc…" \
+        run_apt install -y git curl ca-certificates ufw gnupg psmisc
     ok "Базовые пакеты готовы"
 }
 
@@ -126,9 +159,8 @@ install_docker() {
         ok "Docker уже установлен ($(docker --version))"
         return
     fi
-    log "Устанавливаю Docker через get.docker.com (может занять пару минут)…"
-    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-    sh /tmp/get-docker.sh
+    run_step "Скачиваю установщик Docker…" curl -fSL https://get.docker.com -o /tmp/get-docker.sh
+    run_step "Запускаю установщик Docker (2–3 минуты)…" sh /tmp/get-docker.sh
     rm -f /tmp/get-docker.sh
     systemctl enable --now docker
     ok "Docker установлен ($(docker --version))"
@@ -139,14 +171,15 @@ install_caddy() {
         ok "Caddy уже установлен ($(caddy version | head -n1))"
         return
     fi
-    log "Устанавливаю Caddy…"
-    run_apt install -y debian-keyring debian-archive-keyring apt-transport-https
+    run_step "Ставлю зависимости Caddy…" \
+        run_apt install -y debian-keyring debian-archive-keyring apt-transport-https
+    log "Добавляю apt-репозиторий Caddy…"
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
         | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
         > /etc/apt/sources.list.d/caddy-stable.list
-    run_apt update
-    run_apt install -y caddy
+    run_step "Обновляю apt после добавления Caddy…" run_apt update
+    run_step "Ставлю Caddy…" run_apt install -y caddy
     ok "Caddy установлен ($(caddy version | head -n1))"
 }
 
@@ -266,8 +299,8 @@ EOF
 
 # ---------- run ----------
 start_bot() {
-    log "Собираю и запускаю docker compose…"
-    (cd "$INSTALL_DIR" && docker compose up -d --build)
+    run_step "Собираю и запускаю docker compose (первый build — 2–5 минут)…" \
+        bash -c "cd '$INSTALL_DIR' && docker compose up -d --build"
     ok "Контейнер запущен"
 }
 
