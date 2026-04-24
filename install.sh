@@ -21,24 +21,37 @@ ok()   { printf "${C_GREEN}[+]${C_RESET} %s\n" "$*"; }
 warn() { printf "${C_YELLOW}[!]${C_RESET} %s\n" "$*" >&2; }
 die()  { printf "${C_RED}[x]${C_RESET} %s\n" "$*" >&2; exit 1; }
 
+banner() {
+    cat <<EOF
+
+${C_BOLD}============================================================
+ VPN Telegram bot installer — Remnawave + platega.io
+============================================================${C_RESET}
+
+EOF
+}
+
 # ---------- sanity ----------
+banner
 [[ $EUID -eq 0 ]] || die "Запустите скрипт от root: sudo bash install.sh"
 
 # When piping from curl, stdin is not a TTY — try to reopen from /dev/tty.
 if [[ ! -t 0 ]]; then
     if [[ -r /dev/tty ]]; then
         exec </dev/tty
+        ok "stdin привязан к /dev/tty — интерактивные вопросы будут работать"
     else
-        warn "Интерактивный ввод недоступен — используйте переменные окружения или запустите скрипт напрямую: bash install.sh"
+        warn "Интерактивный ввод недоступен. Передайте значения через переменные окружения (BOT_TOKEN=..., DOMAIN=... и т.д.) и перезапустите."
     fi
 fi
 
+# ---------- helpers ----------
 ask() {
     # ask <var_name> <prompt> [default]
     local __var="$1" __prompt="$2" __default="${3:-}" __value=""
     __value="${!__var:-}"
     if [[ -n "$__value" ]]; then
-        ok "$__var уже задан, использую значение из окружения"
+        ok "$__var = (из окружения) ${__value:0:6}…"
         return 0
     fi
     local suffix=""
@@ -62,7 +75,7 @@ ask_yes_no() {
     local __var="$1" __prompt="$2" __default="${3:-yes}" __value="" __hint=""
     __value="${!__var:-}"
     if [[ -n "$__value" ]]; then
-        ok "$__var уже задан (${__value})"
+        ok "$__var = $__value (из окружения)"
         return 0
     fi
     if [[ "$__default" == "yes" ]]; then __hint="[Y/n]"; else __hint="[y/N]"; fi
@@ -78,91 +91,115 @@ ask_yes_no() {
     done
 }
 
+wait_for_apt() {
+    local i=0
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
+       || fuser /var/lib/apt/lists/lock >/dev/null 2>&1 \
+       || fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+        if (( i == 0 )); then
+            warn "apt занят другим процессом (возможно, unattended-upgrades). Ожидание…"
+        fi
+        sleep 3
+        (( ++i > 120 )) && die "apt залочен больше 6 минут. Прервите unattended-upgrades и запустите установщик снова."
+    done
+}
+
+run_apt() {
+    wait_for_apt
+    DEBIAN_FRONTEND=noninteractive apt-get "$@"
+}
+
 # ---------- apt packages ----------
 install_packages() {
-    log "Обновляю apt и ставлю базовые пакеты…"
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq
-    apt-get install -y -qq git curl ca-certificates ufw >/dev/null
+    log "Обновляю apt (это может занять минуту)…"
+    run_apt update
+    log "Ставлю базовые пакеты: git, curl, ca-certificates, ufw, gnupg…"
+    run_apt install -y git curl ca-certificates ufw gnupg
+    ok "Базовые пакеты готовы"
 }
 
 install_docker() {
     if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        ok "Docker уже установлен"
+        ok "Docker уже установлен ($(docker --version))"
         return
     fi
-    log "Устанавливаю Docker…"
-    curl -fsSL https://get.docker.com | sh >/dev/null
-    systemctl enable --now docker >/dev/null
-    ok "Docker установлен"
+    log "Устанавливаю Docker через get.docker.com (может занять пару минут)…"
+    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+    sh /tmp/get-docker.sh
+    rm -f /tmp/get-docker.sh
+    systemctl enable --now docker
+    ok "Docker установлен ($(docker --version))"
 }
 
 install_caddy() {
     if command -v caddy >/dev/null 2>&1; then
-        ok "Caddy уже установлен"
+        ok "Caddy уже установлен ($(caddy version | head -n1))"
         return
     fi
     log "Устанавливаю Caddy…"
-    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https >/dev/null
+    run_apt install -y debian-keyring debian-archive-keyring apt-transport-https
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-        | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-        | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-    apt-get update -qq
-    apt-get install -y -qq caddy >/dev/null
-    ok "Caddy установлен"
+        > /etc/apt/sources.list.d/caddy-stable.list
+    run_apt update
+    run_apt install -y caddy
+    ok "Caddy установлен ($(caddy version | head -n1))"
 }
 
 # ---------- repo ----------
 clone_or_update_repo() {
     if [[ -d "$INSTALL_DIR/.git" ]]; then
-        log "Обновляю существующий репо в $INSTALL_DIR…"
-        git -C "$INSTALL_DIR" fetch --all --quiet
-        git -C "$INSTALL_DIR" checkout --quiet "$BRANCH"
-        git -C "$INSTALL_DIR" pull --quiet --ff-only
+        log "Обновляю существующий репо в $INSTALL_DIR (branch: $BRANCH)…"
+        git -C "$INSTALL_DIR" fetch --all
+        git -C "$INSTALL_DIR" checkout "$BRANCH"
+        git -C "$INSTALL_DIR" pull --ff-only
     else
-        log "Клонирую репо в $INSTALL_DIR…"
-        git clone --quiet --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+        log "Клонирую репо в $INSTALL_DIR (branch: $BRANCH)…"
+        git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
     fi
-    ok "Репо готов ($BRANCH)"
+    ok "Репо готов: $INSTALL_DIR ($BRANCH)"
 }
 
 # ---------- .env wizard ----------
-write_env() {
-    local env_file="$INSTALL_DIR/.env"
-    if [[ -f "$env_file" ]]; then
-        warn ".env уже существует, оставляю как есть (сохранил копию в .env.backup)"
-        cp -f "$env_file" "$env_file.backup.$(date +%s)"
-        return
-    fi
-
+collect_env() {
     echo
-    printf "${C_BOLD}=== Настройка бота ===${C_RESET}\n"
-    echo "Введите значения по одному. Где не знаете — смотрите ссылки в комментариях."
+    printf "${C_BOLD}=== Заполнение .env ===${C_RESET}\n"
+    echo "Введите значения по одному. Все данные попадут только в $INSTALL_DIR/.env с chmod 600."
     echo
 
-    echo "Telegram:"
-    ask BOT_TOKEN "  BOT_TOKEN (от @BotFather)"
+    echo "--- Telegram ---"
+    ask BOT_TOKEN "  BOT_TOKEN (от @BotFather, формат 1234:ABC...)"
     ask ADMIN_IDS "  ADMIN_IDS (Telegram ID админов через запятую; узнать у @userinfobot)"
 
     echo
-    echo "Remnawave:"
-    ask REMNAWAVE_BASE_URL "  REMNAWAVE_BASE_URL (например https://panel.example.com)"
-    ask REMNAWAVE_TOKEN "  REMNAWAVE_TOKEN (Settings → API Tokens)"
+    echo "--- Remnawave ---"
+    ask REMNAWAVE_BASE_URL "  REMNAWAVE_BASE_URL (URL панели, напр. https://panel.example.com)"
+    ask REMNAWAVE_TOKEN "  REMNAWAVE_TOKEN (Settings → API Tokens → Create)"
     REMNAWAVE_SQUAD_UUIDS="${REMNAWAVE_SQUAD_UUIDS:-}"
-    printf "${C_BOLD}%s${C_RESET}: " "  REMNAWAVE_SQUAD_UUIDS (список UUID Internal Squads через запятую; Enter — подтянуть единственный доступный)"
+    printf "${C_BOLD}%s${C_RESET}: " "  REMNAWAVE_SQUAD_UUIDS (UUID Internal Squads через запятую; Enter — подтянуть единственный доступный)"
     read -r _squads || _squads=""
     [[ -n "$_squads" ]] && REMNAWAVE_SQUAD_UUIDS="$_squads"
 
     echo
-    echo "platega.io:"
+    echo "--- platega.io ---"
     ask PLATEGA_MERCHANT_ID "  PLATEGA_MERCHANT_ID"
-    ask PLATEGA_SECRET "  PLATEGA_SECRET"
+    ask PLATEGA_SECRET "  PLATEGA_SECRET (API-ключ)"
     ask PLATEGA_PAYMENT_METHOD "  PLATEGA_PAYMENT_METHOD (2 = СБП/QR, 3 = карта, 11/12/13 = крипта)" "2"
 
     echo
-    ask DOMAIN "Домен для бота (A-запись должна указывать на этот сервер, например bot.example.com)"
-    ask SUPPORT_USERNAME "Контакт поддержки в справке (например @support)" "@support"
+    echo "--- Общие ---"
+    ask DOMAIN "  DOMAIN (домен бота, A-запись должна уже указывать на этот сервер, напр. bot.example.com)"
+    ask SUPPORT_USERNAME "  SUPPORT_USERNAME (контакт поддержки в справке)" "@support"
+}
+
+write_env_file() {
+    local env_file="$INSTALL_DIR/.env"
+    if [[ -f "$env_file" ]]; then
+        local backup="${env_file}.backup.$(date +%s)"
+        cp -f "$env_file" "$backup"
+        warn ".env уже был — сохранил копию в $backup и перезапишу"
+    fi
 
     local bot_username
     bot_username="$(curl -fsS --max-time 5 "https://api.telegram.org/bot${BOT_TOKEN}/getMe" \
@@ -179,7 +216,7 @@ DATABASE_URL=sqlite+aiosqlite:///./data/vpnbot.sqlite3
 
 REMNAWAVE_BASE_URL=${REMNAWAVE_BASE_URL}
 REMNAWAVE_TOKEN=${REMNAWAVE_TOKEN}
-REMNAWAVE_SQUAD_UUIDS=${REMNAWAVE_SQUAD_UUIDS}
+REMNAWAVE_SQUAD_UUIDS=${REMNAWAVE_SQUAD_UUIDS:-}
 REMNAWAVE_TRAFFIC_LIMIT_GB=0
 
 PLATEGA_MERCHANT_ID=${PLATEGA_MERCHANT_ID}
@@ -203,15 +240,17 @@ configure_firewall() {
     if ! command -v ufw >/dev/null 2>&1; then
         return
     fi
+    log "Настраиваю UFW (разрешаю 22/80/443)…"
     ufw allow 22/tcp  >/dev/null 2>&1 || true
     ufw allow 80/tcp  >/dev/null 2>&1 || true
     ufw allow 443/tcp >/dev/null 2>&1 || true
-    echo "y" | ufw enable >/dev/null 2>&1 || true
-    ok "UFW: 22/80/443 разрешены"
+    yes | ufw enable >/dev/null 2>&1 || true
+    ok "UFW настроен"
 }
 
 configure_caddy() {
     local domain="$DOMAIN"
+    log "Конфигурирую Caddy для домена ${domain}…"
     cat > /etc/caddy/Caddyfile <<EOF
 ${domain} {
     reverse_proxy 127.0.0.1:8080
@@ -219,7 +258,7 @@ ${domain} {
 EOF
     systemctl enable caddy >/dev/null 2>&1 || true
     systemctl restart caddy
-    ok "Caddy настроен на ${domain} (HTTPS выдастся автоматически)"
+    ok "Caddy запущен (сертификат Let's Encrypt выдастся автоматически)"
 }
 
 # ---------- run ----------
@@ -229,7 +268,24 @@ start_bot() {
     ok "Контейнер запущен"
 }
 
+show_final_hint() {
+    echo
+    printf "${C_GREEN}${C_BOLD}============================================================\n"
+    printf " Установка завершена!\n"
+    printf "============================================================${C_RESET}\n\n"
+    echo "  Логи бота:        (cd $INSTALL_DIR && docker compose logs -f bot)"
+    echo "  Перезапуск:       (cd $INSTALL_DIR && docker compose restart bot)"
+    echo "  Health-check:     curl https://${DOMAIN}/health"
+    echo
+    printf "${C_YELLOW}В ЛК platega.io (Настройки → Callback URLs) добавьте:${C_RESET}\n"
+    echo "  https://${DOMAIN}/platega/callback"
+    echo
+    echo "  Напишите боту /start — и можно продавать VPN."
+    echo
+}
+
 # ---------- main ----------
+log "Проверяю/устанавливаю системные зависимости…"
 install_packages
 install_docker
 
@@ -237,15 +293,9 @@ ask_yes_no SETUP_CADDY "Настроить HTTPS через Caddy (рекоме�
 [[ "$SETUP_CADDY" == "yes" ]] && install_caddy
 
 clone_or_update_repo
-write_env
+collect_env
+write_env_file
 configure_firewall
 [[ "$SETUP_CADDY" == "yes" ]] && configure_caddy
 start_bot
-
-echo
-printf "${C_GREEN}${C_BOLD}Готово!${C_RESET}\n"
-echo "  Логи бота:            (cd $INSTALL_DIR && docker compose logs -f bot)"
-echo "  Перезапуск:           (cd $INSTALL_DIR && docker compose restart bot)"
-echo "  Health-check:         curl https://${DOMAIN:-<домен>}/health"
-echo "  В ЛК platega.io добавьте Callback URL:  https://${DOMAIN:-<домен>}/platega/callback"
-echo "  Напишите боту /start — и можно продавать VPN."
+show_final_hint
