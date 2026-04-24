@@ -1,0 +1,26 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vpnbot
+      POSTGRES_USER: vpnbot
+      POSTGRES_PASSWORD: vpnbot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pgdata:
