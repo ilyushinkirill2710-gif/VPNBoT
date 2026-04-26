@@ -147,14 +147,9 @@ run_step() {
 trap 'heartbeat_stop' EXIT INT TERM
 
 # ---------- apt packages ----------
-# apt-get update runs only when we actually need to install something.
-APT_UPDATED=0
-ensure_apt_updated() {
-    [[ "$APT_UPDATED" -eq 1 ]] && return
-    run_step "Обновляю списки apt (одноразово перед установкой)…" run_apt update
-    APT_UPDATED=1
-}
-
+# `apt-get update` намеренно НЕ вызывается — чтобы ничего не обновлять на VPS.
+# Если какой-то пакет окажется недоступен, apt-get install упадёт с понятной
+# ошибкой, и тогда нужно один раз запустить `sudo apt-get update` руками.
 ensure_pkgs() {
     # ensure_pkgs <bin1:pkg1> <bin2:pkg2> …  — устанавливает только отсутствующие.
     local missing=()
@@ -168,7 +163,6 @@ ensure_pkgs() {
         ok "Системные пакеты уже установлены, apt не трогаю"
         return
     fi
-    ensure_apt_updated
     run_step "Ставлю недостающие пакеты: ${missing[*]}…" run_apt install -y "${missing[@]}"
 }
 
@@ -194,7 +188,6 @@ install_caddy() {
         return
     fi
     ensure_pkgs gpg:gnupg
-    ensure_apt_updated
     run_step "Ставлю зависимости Caddy…" \
         run_apt install -y debian-keyring debian-archive-keyring apt-transport-https
     log "Добавляю apt-репозиторий Caddy…"
@@ -202,9 +195,9 @@ install_caddy() {
         | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
         > /etc/apt/sources.list.d/caddy-stable.list
-    # Новый репо добавлен — нужно один раз обновить индексы именно для него.
-    APT_UPDATED=0
-    ensure_apt_updated
+    # Один раз обновляем только что добавленный репозиторий Caddy, иначе
+    # apt не увидит пакет. Убирать этот update опасно — установка Caddy упадёт.
+    run_step "Обновляю индекс apt для репо Caddy…" run_apt update
     run_step "Ставлю Caddy…" run_apt install -y caddy
     ok "Caddy установлен ($(caddy version | head -n1))"
 }
