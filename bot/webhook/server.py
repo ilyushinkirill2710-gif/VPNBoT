@@ -70,7 +70,10 @@ def build_app(
     async def health(_: web.Request) -> web.Response:
         return web.Response(status=200, text="ok")
 
+    # Both paths accept platega.io callbacks — /platega_webhook is kept as an
+    # alias for installations whose callback URL was configured with that path.
     app.router.add_post("/platega/callback", callback_handler)
+    app.router.add_post("/platega_webhook", callback_handler)
     app.router.add_get("/health", health)
     return app
 

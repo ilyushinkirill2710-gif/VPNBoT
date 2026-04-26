@@ -4,6 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/ilyushinkirill2710-gif/VPNBoT/main/install.sh | sudo bash
 # Optional environment variables (set before the pipe) to skip prompts:
 #   BRANCH, INSTALL_DIR, BOT_TOKEN, ADMIN_IDS, DOMAIN,
+#   CALLBACK_PORT (e.g. 8443; empty = 443), CALLBACK_PATH (default /platega/callback),
 #   REMNAWAVE_BASE_URL, REMNAWAVE_TOKEN, REMNAWAVE_SQUAD_UUIDS,
 #   PLATEGA_MERCHANT_ID, PLATEGA_SECRET, PLATEGA_PAYMENT_METHOD,
 #   SUPPORT_USERNAME, SETUP_CADDY (yes|no)
@@ -245,7 +246,18 @@ collect_env() {
     echo
     echo "--- Общие ---"
     ask DOMAIN "  DOMAIN (домен бота, A-запись должна уже указывать на этот сервер, напр. bot.example.com)"
+    ask CALLBACK_PORT "  CALLBACK_PORT (HTTPS-порт; 443 — стандартный, 8443 — если нужен нестандартный)" "443"
+    ask CALLBACK_PATH "  CALLBACK_PATH (путь, на который platega.io шлёт callback)" "/platega/callback"
     ask SUPPORT_USERNAME "  SUPPORT_USERNAME (контакт поддержки в справке)" "@support"
+}
+
+callback_url() {
+    local port="${CALLBACK_PORT:-443}" path="${CALLBACK_PATH:-/platega/callback}"
+    if [[ "$port" == "443" ]]; then
+        printf 'https://%s%s' "$DOMAIN" "$path"
+    else
+        printf 'https://%s:%s%s' "$DOMAIN" "$port" "$path"
+    fi
 }
 
 write_env_file() {
@@ -278,7 +290,7 @@ PLATEGA_MERCHANT_ID=${PLATEGA_MERCHANT_ID}
 PLATEGA_SECRET=${PLATEGA_SECRET}
 PLATEGA_BASE_URL=https://app.platega.io
 PLATEGA_PAYMENT_METHOD=${PLATEGA_PAYMENT_METHOD}
-PLATEGA_CALLBACK_URL=https://${DOMAIN}/platega/callback
+PLATEGA_CALLBACK_URL=$(callback_url)
 PLATEGA_RETURN_URL=${return_url}
 PLATEGA_FAIL_URL=${return_url}
 
@@ -295,19 +307,23 @@ configure_firewall() {
     if ! command -v ufw >/dev/null 2>&1; then
         return
     fi
-    log "Настраиваю UFW (разрешаю 22/80/443)…"
+    local https_port="${CALLBACK_PORT:-443}"
+    log "Настраиваю UFW (22/80/${https_port})…"
     ufw allow 22/tcp  >/dev/null 2>&1 || true
-    ufw allow 80/tcp  >/dev/null 2>&1 || true
-    ufw allow 443/tcp >/dev/null 2>&1 || true
+    ufw allow 80/tcp  >/dev/null 2>&1 || true    # нужен Let's Encrypt для выдачи сертификата
+    ufw allow "${https_port}/tcp" >/dev/null 2>&1 || true
     yes | ufw enable >/dev/null 2>&1 || true
     ok "UFW настроен"
 }
 
 configure_caddy() {
     local domain="$DOMAIN"
-    log "Конфигурирую Caddy для домена ${domain}…"
+    local port="${CALLBACK_PORT:-443}"
+    local host="$domain"
+    [[ "$port" != "443" ]] && host="${domain}:${port}"
+    log "Конфигурирую Caddy: ${host} → 127.0.0.1:8080…"
     cat > /etc/caddy/Caddyfile <<EOF
-${domain} {
+${host} {
     reverse_proxy 127.0.0.1:8080
 }
 EOF
@@ -324,16 +340,20 @@ start_bot() {
 }
 
 show_final_hint() {
+    local cb_url; cb_url="$(callback_url)"
+    local port="${CALLBACK_PORT:-443}"
+    local health_url="https://${DOMAIN}"
+    [[ "$port" != "443" ]] && health_url="${health_url}:${port}"
     echo
-    printf "${C_GREEN}${C_BOLD}============================================================\n"
-    printf " Установка завершена!\n"
-    printf "============================================================${C_RESET}\n\n"
+    printf '%s%s============================================================\n' "$C_GREEN" "$C_BOLD"
+    printf ' Установка завершена!\n'
+    printf '============================================================%s\n\n' "$C_RESET"
     echo "  Логи бота:        (cd $INSTALL_DIR && docker compose logs -f bot)"
     echo "  Перезапуск:       (cd $INSTALL_DIR && docker compose restart bot)"
-    echo "  Health-check:     curl https://${DOMAIN}/health"
+    echo "  Health-check:     curl ${health_url}/health"
     echo
-    printf "${C_YELLOW}В ЛК platega.io (Настройки → Callback URLs) добавьте:${C_RESET}\n"
-    echo "  https://${DOMAIN}/platega/callback"
+    printf '%sВ ЛК platega.io (Настройки → Callback URLs) добавьте:%s\n' "$C_YELLOW" "$C_RESET"
+    echo "  ${cb_url}"
     echo
     echo "  Напишите боту /start — и можно продавать VPN."
     echo
